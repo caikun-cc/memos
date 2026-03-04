@@ -9,13 +9,19 @@ const state = {
     isPreviewMode: false,
     pendingAction: null,
     searchKeyword: '',
-    currentMonth: new Date()
+    currentMonth: new Date(),
+    token: localStorage.getItem('token'),
+    isLoggedIn: false
 };
 
 // ========== DOM 元素 ==========
 const DOM = {
+    loginView: document.getElementById('loginView'),
     homeView: document.getElementById('homeView'),
     editorView: document.getElementById('editorView'),
+    loginForm: document.getElementById('loginForm'),
+    passwordInput: document.getElementById('passwordInput'),
+    loginError: document.getElementById('loginError'),
     memoListHome: document.getElementById('memoListHome'),
     tagListEl: document.getElementById('tagList'),
     titleInput: document.getElementById('titleInput'),
@@ -35,7 +41,14 @@ const DOM = {
     listTitle: document.getElementById('listTitle'),
     memoCount: document.getElementById('memoCount'),
     toolbarTitle: document.getElementById('toolbarTitle'),
-    deleteBtnText: document.getElementById('deleteBtnText')
+    deleteBtnText: document.getElementById('deleteBtnText'),
+    // 设置相关
+    settingsModal: document.getElementById('settingsModal'),
+    oldPasswordInput: document.getElementById('oldPasswordInput'),
+    newPasswordInput: document.getElementById('newPasswordInput'),
+    tokenExpiresInput: document.getElementById('tokenExpiresInput'),
+    jwtSecretInput: document.getElementById('jwtSecretInput'),
+    settingsError: document.getElementById('settingsError')
 };
 
 // ========== 工具函数 ==========
@@ -100,15 +113,178 @@ function showToast(message, type = 'info') {
 // ========== API 调用 ==========
 async function fetchAPI(url, options = {}) {
     try {
+        const headers = { 'Content-Type': 'application/json' };
+        
+        // 添加 token
+        if (state.token) {
+            headers['Authorization'] = `Bearer ${state.token}`;
+        }
+        
         const response = await fetch(url, {
-            headers: { 'Content-Type': 'application/json' },
+            headers,
             ...options
         });
-        return await response.json();
+        const data = await response.json();
+        
+        // 处理认证错误
+        if (response.status === 401) {
+            handleAuthError(data);
+            return { success: false, error: data.error, code: data.code };
+        }
+        
+        return data;
     } catch (error) {
         console.error('API Error:', error);
         showToast(error.message || '网络请求失败', 'error');
         return { success: false, error: error.message };
+    }
+}
+
+// ========== 认证相关 ==========
+function handleAuthError(error) {
+    state.token = null;
+    state.isLoggedIn = false;
+    localStorage.removeItem('token');
+    showLogin();
+    if (error.code === 'TOKEN_EXPIRED') {
+        showToast('登录已过期，请重新登录', 'warning');
+    }
+}
+
+function showLogin() {
+    DOM.loginView.classList.remove('hidden');
+    DOM.homeView.style.display = 'none';
+    DOM.editorView.style.display = 'none';
+    DOM.loginError.textContent = '';
+    DOM.passwordInput.value = '';
+    DOM.passwordInput.focus();
+}
+
+function showApp() {
+    DOM.loginView.classList.add('hidden');
+    DOM.homeView.style.display = 'flex';
+}
+
+async function handleLogin(e) {
+    e.preventDefault();
+    
+    const password = DOM.passwordInput.value;
+    if (!password) {
+        DOM.loginError.textContent = '请输入密码';
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password })
+        });
+        const data = await response.json();
+        
+        if (data.success) {
+            state.token = data.token;
+            state.isLoggedIn = true;
+            localStorage.setItem('token', data.token);
+            showApp();
+            loadMemoList();
+            loadTags();
+            renderCalendar();
+        } else {
+            DOM.loginError.textContent = data.error || '登录失败';
+        }
+    } catch (error) {
+        DOM.loginError.textContent = '网络错误，请重试';
+    }
+}
+
+async function checkAuth() {
+    if (!state.token) {
+        showLogin();
+        return false;
+    }
+    
+    const result = await fetchAPI('/api/auth/verify');
+    if (result.success) {
+        state.isLoggedIn = true;
+        showApp();
+        return true;
+    } else {
+        showLogin();
+        return false;
+    }
+}
+
+// ========== 设置相关 ==========
+async function openSettings() {
+    // 加载当前配置
+    const result = await fetchAPI('/api/auth/config');
+    if (result.success) {
+        DOM.tokenExpiresInput.value = result.data.tokenExpiresIn;
+    }
+    
+    // 清空其他字段
+    DOM.oldPasswordInput.value = '';
+    DOM.newPasswordInput.value = '';
+    DOM.jwtSecretInput.value = '';
+    DOM.settingsError.textContent = '';
+    
+    DOM.settingsModal.classList.add('show');
+}
+
+function closeSettings() {
+    DOM.settingsModal.classList.remove('show');
+}
+
+async function saveSettings() {
+    const oldPassword = DOM.oldPasswordInput.value.trim();
+    const newPassword = DOM.newPasswordInput.value.trim();
+    const tokenExpiresIn = DOM.tokenExpiresInput.value.trim();
+    const jwtSecret = DOM.jwtSecretInput.value.trim();
+    
+    // 检查是否有修改
+    if (!oldPassword && !newPassword && !tokenExpiresIn && !jwtSecret) {
+        DOM.settingsError.textContent = '没有要保存的修改';
+        return;
+    }
+    
+    // 如果修改密码，需要填写原密码
+    if (newPassword && !oldPassword) {
+        DOM.settingsError.textContent = '修改密码需要输入原密码';
+        return;
+    }
+    
+    const body = {};
+    if (newPassword) {
+        body.oldPassword = oldPassword;
+        body.newPassword = newPassword;
+    }
+    if (tokenExpiresIn) {
+        body.tokenExpiresIn = tokenExpiresIn;
+    }
+    if (jwtSecret) {
+        body.jwtSecret = jwtSecret;
+    }
+    
+    const result = await fetchAPI('/api/auth/config', {
+        method: 'POST',
+        body: JSON.stringify(body)
+    });
+    
+    if (result.success) {
+        showToast('设置已保存', 'success');
+        closeSettings();
+        
+        // 如果修改了JWT密钥，需要重新登录
+        if (jwtSecret) {
+            state.token = null;
+            state.isLoggedIn = false;
+            localStorage.removeItem('token');
+            showLogin();
+            showToast('JWT密钥已修改，请重新登录', 'info');
+        }
+    } else {
+        DOM.settingsError.textContent = result.error || '保存失败';
     }
 }
 
@@ -651,6 +827,12 @@ function bindEvents() {
     document.getElementById('btnCancelModal').addEventListener('click', closeModal);
     document.getElementById('btnConfirmModal').addEventListener('click', confirmAction);
     
+    // 设置
+    document.getElementById('btnSettings').addEventListener('click', openSettings);
+    document.getElementById('btnCloseSettings').addEventListener('click', closeSettings);
+    document.getElementById('btnCancelSettings').addEventListener('click', closeSettings);
+    document.getElementById('btnSaveSettings').addEventListener('click', saveSettings);
+    
     // 自动保存
     DOM.contentEditor.addEventListener('input', debouncedSave);
     DOM.titleInput.addEventListener('input', debouncedSave);
@@ -666,10 +848,19 @@ function bindEvents() {
 }
 
 // ========== 初始化 ==========
-document.addEventListener('DOMContentLoaded', () => {
-    loadMemoList();
-    loadTags();
-    renderCalendar();
+document.addEventListener('DOMContentLoaded', async () => {
+    // 绑定登录表单事件
+    DOM.loginForm.addEventListener('submit', handleLogin);
+    
+    // 检查登录状态
+    const isAuthed = await checkAuth();
+    
+    if (isAuthed) {
+        loadMemoList();
+        loadTags();
+        renderCalendar();
+    }
+    
     bindEvents();
 });
 

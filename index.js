@@ -4,10 +4,36 @@ const fs = require('fs').promises;
 const fsSync = require('fs');
 const { marked } = require('marked');
 const { v4: uuidv4 } = require('uuid');
+const jwt = require('jsonwebtoken');
 
 const app = express();
 const PORT = process.env.PORT || 8022;
 const MEMOS_DIR = path.join(__dirname, 'memos');
+const CONFIG_FILE = path.join(__dirname, 'config.json');
+
+// ========== 配置管理 ----------
+let config = {
+    password: 'admin123',
+    jwtSecret: 'default-secret-key',
+    tokenExpiresIn: '7d'
+};
+
+async function loadConfig() {
+    try {
+        const data = await fs.readFile(CONFIG_FILE, 'utf-8');
+        config = JSON.parse(data);
+    } catch (error) {
+        // 配置文件不存在，使用默认值并创建
+        await fs.writeFile(CONFIG_FILE, JSON.stringify(config, null, 2));
+    }
+}
+
+async function saveConfig() {
+    await fs.writeFile(CONFIG_FILE, JSON.stringify(config, null, 2));
+}
+
+// 初始化配置
+loadConfig();
 
 // ========== 简单缓存 ==========
 const cache = {
@@ -78,6 +104,25 @@ app.use((req, res, next) => {
     
     next();
 });
+
+// ========== 认证中间件 ==========
+function authMiddleware(req, res, next) {
+    const authHeader = req.headers.authorization;
+    
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({ success: false, error: '未登录', code: 'UNAUTHORIZED' });
+    }
+    
+    const token = authHeader.split(' ')[1];
+    
+    try {
+        const decoded = jwt.verify(token, config.jwtSecret);
+        req.user = decoded;
+        next();
+    } catch (error) {
+        return res.status(401).json({ success: false, error: '登录已过期，请重新登录', code: 'TOKEN_EXPIRED' });
+    }
+}
 
 // ========== 输入验证中间件 ==========
 function validateMemoInput(req, res, next) {
@@ -162,8 +207,93 @@ async function readAllMemos() {
 
 // ========== API 路由 ==========
 
+// ========== 认证 API ==========
+// 登录
+app.post('/api/auth/login', async (req, res) => {
+    try {
+        const { password } = req.body;
+        
+        if (!password) {
+            return res.status(400).json({ success: false, error: '请输入密码' });
+        }
+        
+        if (password !== config.password) {
+            return res.status(401).json({ success: false, error: '密码错误' });
+        }
+        
+        const token = jwt.sign(
+            { loginTime: new Date().toISOString() },
+            config.jwtSecret,
+            { expiresIn: config.tokenExpiresIn }
+        );
+        
+        res.json({ success: true, token });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// 验证 token
+app.get('/api/auth/verify', authMiddleware, (req, res) => {
+    res.json({ success: true, message: 'Token 有效' });
+});
+
+// 获取当前配置（不返回密码）
+app.get('/api/auth/config', authMiddleware, (req, res) => {
+    res.json({
+        success: true,
+        data: {
+            tokenExpiresIn: config.tokenExpiresIn
+        }
+    });
+});
+
+// 修改配置
+app.post('/api/auth/config', authMiddleware, async (req, res) => {
+    try {
+        const { oldPassword, newPassword, tokenExpiresIn, jwtSecret } = req.body;
+        
+        // 如果要修改密码，需要验证原密码
+        if (newPassword) {
+            if (!oldPassword) {
+                return res.status(400).json({ success: false, error: '请输入原密码' });
+            }
+            if (oldPassword !== config.password) {
+                return res.status(400).json({ success: false, error: '原密码错误' });
+            }
+            if (newPassword.length < 4) {
+                return res.status(400).json({ success: false, error: '新密码长度至少4位' });
+            }
+            config.password = newPassword;
+        }
+        
+        // 修改过期时间
+        if (tokenExpiresIn) {
+            const validFormats = /^\d+[hdmy]$/; // 如 7d, 24h, 1m, 1y
+            if (!validFormats.test(tokenExpiresIn)) {
+                return res.status(400).json({ success: false, error: '过期时间格式错误，如：7d, 24h, 1m, 1y' });
+            }
+            config.tokenExpiresIn = tokenExpiresIn;
+        }
+        
+        // 修改JWT密钥
+        if (jwtSecret) {
+            if (jwtSecret.length < 16) {
+                return res.status(400).json({ success: false, error: 'JWT密钥长度至少16位' });
+            }
+            config.jwtSecret = jwtSecret;
+        }
+        
+        await saveConfig();
+        
+        res.json({ success: true, message: '配置已保存' });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 // 获取所有标签
-app.get('/api/tags', async (req, res) => {
+app.get('/api/tags', authMiddleware, async (req, res) => {
     try {
         const memos = await readAllMemos();
         const tagsSet = new Set();
@@ -181,7 +311,7 @@ app.get('/api/tags', async (req, res) => {
 });
 
 // 获取所有备忘录列表
-app.get('/api/memos', async (req, res) => {
+app.get('/api/memos', authMiddleware, async (req, res) => {
     try {
         const { tag } = req.query;
         const memos = await readAllMemos();
@@ -222,7 +352,7 @@ app.get('/api/memos', async (req, res) => {
 });
 
 // 获取单个备忘录
-app.get('/api/memos/:id', async (req, res) => {
+app.get('/api/memos/:id', authMiddleware, async (req, res) => {
     try {
         const filePath = path.join(MEMOS_DIR, `${req.params.id}.json`);
         
@@ -241,7 +371,7 @@ app.get('/api/memos/:id', async (req, res) => {
 });
 
 // 创建备忘录
-app.post('/api/memos', validateMemoInput, async (req, res) => {
+app.post('/api/memos', authMiddleware, validateMemoInput, async (req, res) => {
     try {
         const { title, content, tags } = req.body;
         const id = uuidv4();
@@ -265,7 +395,7 @@ app.post('/api/memos', validateMemoInput, async (req, res) => {
 });
 
 // 更新备忘录
-app.put('/api/memos/:id', validateMemoInput, async (req, res) => {
+app.put('/api/memos/:id', authMiddleware, validateMemoInput, async (req, res) => {
     try {
         const filePath = path.join(MEMOS_DIR, `${req.params.id}.json`);
         
@@ -293,7 +423,7 @@ app.put('/api/memos/:id', validateMemoInput, async (req, res) => {
 });
 
 // 切换置顶状态
-app.patch('/api/memos/:id/pinned', async (req, res) => {
+app.patch('/api/memos/:id/pinned', authMiddleware, async (req, res) => {
     try {
         const filePath = path.join(MEMOS_DIR, `${req.params.id}.json`);
         
@@ -319,7 +449,7 @@ app.patch('/api/memos/:id/pinned', async (req, res) => {
 });
 
 // 删除备忘录
-app.delete('/api/memos/:id', async (req, res) => {
+app.delete('/api/memos/:id', authMiddleware, async (req, res) => {
     try {
         const filePath = path.join(MEMOS_DIR, `${req.params.id}.json`);
         
@@ -338,7 +468,7 @@ app.delete('/api/memos/:id', async (req, res) => {
 });
 
 // 渲染Markdown
-app.post('/api/render', async (req, res) => {
+app.post('/api/render', authMiddleware, async (req, res) => {
     try {
         const rawHtml = marked(req.body.content || '');
         const safeHtml = sanitizeHtml(rawHtml);

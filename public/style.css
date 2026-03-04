@@ -58,6 +58,101 @@ body {
     overflow-x: hidden;
 }
 
+/* ========== 登录界面 ========== */
+.login-view {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: var(--spacing-lg);
+}
+
+.login-view.hidden {
+    display: none;
+}
+
+.login-card {
+    background-color: var(--bg-secondary);
+    border-radius: var(--radius-lg);
+    padding: var(--spacing-xl);
+    width: 100%;
+    max-width: 280px;
+    box-shadow: 0 2px 12px var(--shadow);
+}
+
+.login-header {
+    text-align: center;
+    margin-bottom: var(--spacing-xl);
+}
+
+.login-header h1 {
+    font-size: var(--font-2xl);
+    font-weight: 600;
+    margin-bottom: var(--spacing-xs);
+}
+
+.login-header p {
+    color: var(--text-secondary);
+    font-size: var(--font-base);
+}
+
+.login-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+}
+
+.login-form input {
+    width: 100%;
+    padding: var(--spacing-sm) var(--spacing-md);
+    background-color: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    color: var(--text-primary);
+    font-size: var(--font-base);
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+.login-form input:focus {
+    border-color: var(--accent);
+}
+
+.login-form input::placeholder {
+    color: var(--text-muted);
+}
+
+.btn-login {
+    width: 100%;
+    min-width: 60px;
+    height: 32px;
+    padding: 6px 14px;
+    background-color: var(--accent);
+    color: white;
+    border: none;
+    border-radius: var(--radius-md);
+    font-size: var(--font-base);
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.btn-login:hover {
+    background-color: var(--accent-hover);
+}
+
+.btn-login:active {
+    transform: scale(0.98);
+}
+
+.login-error {
+    color: var(--danger);
+    font-size: var(--font-sm);
+    text-align: center;
+    margin-top: var(--spacing-xs);
+    min-height: 14px;
+}
+
 /* ========== 公共按钮样式 ========== */
 .btn {
     border: none;
@@ -120,10 +215,11 @@ body {
     height: fit-content;
     position: sticky;
     top: var(--spacing-xl);
+    gap: var(--spacing-lg);
 }
 
 .panel-header {
-    margin-bottom: var(--spacing-lg);
+    margin-bottom: 0;
 }
 
 .panel-header h1 {
@@ -152,7 +248,7 @@ body {
 
 /* 搜索框 */
 .search-box {
-    margin-bottom: var(--spacing-lg);
+    margin-bottom: 0;
 }
 
 .search-box input {
@@ -203,7 +299,7 @@ body {
 
 /* 日历 */
 .calendar-section {
-    margin-bottom: var(--spacing-lg);
+    margin-bottom: 0;
 }
 
 .calendar {
@@ -288,7 +384,7 @@ body {
 
 /* 标签区块 */
 .tags-section {
-    margin-bottom: var(--spacing-lg);
+    margin-bottom: 0;
 }
 
 .tag-list {
@@ -327,7 +423,7 @@ body {
 
 /* 统计区块 */
 .stats-section {
-    margin-bottom: var(--spacing-lg);
+    margin-bottom: 0;
 }
 
 .stats-grid {
@@ -354,6 +450,26 @@ body {
     font-size: var(--font-xs);
     color: var(--text-muted);
     margin-top: 2px;
+}
+
+/* 设置按钮 */
+.btn-settings {
+    width: 100%;
+    padding: var(--spacing-sm) var(--spacing-md);
+    background-color: var(--bg-tertiary);
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    font-size: var(--font-base);
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-top: auto;
+}
+
+.btn-settings:hover {
+    background-color: var(--bg-hover);
+    color: var(--text-primary);
+    border-color: var(--text-muted);
 }
 
 /* 右侧备忘录列表面板 */
@@ -1110,4 +1226,120 @@ body {
     .btn-tool .btn-text {
         display: none;
     }
+}
+
+/* ========== 设置弹窗 ========== */
+.settings-modal-content {
+    max-width: 340px;
+    padding: 0;
+}
+
+.settings-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--spacing-md) var(--spacing-lg);
+    border-bottom: 1px solid var(--border);
+    background-color: var(--bg-tertiary);
+    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+}
+
+.settings-header h3 {
+    font-size: var(--font-lg);
+    font-weight: 500;
+}
+
+.btn-close-modal {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 20px;
+    cursor: pointer;
+    padding: 0;
+    line-height: 1;
+    transition: color 0.2s;
+}
+
+.btn-close-modal:hover {
+    color: var(--text-primary);
+}
+
+.settings-body {
+    padding: var(--spacing-lg);
+    max-height: 50vh;
+    overflow-y: auto;
+}
+
+.settings-section {
+    margin-bottom: var(--spacing-lg);
+}
+
+.settings-section:last-child {
+    margin-bottom: 0;
+}
+
+.settings-section h4 {
+    font-size: var(--font-sm);
+    color: var(--text-secondary);
+    margin-bottom: var(--spacing-sm);
+    font-weight: 500;
+}
+
+.settings-field {
+    margin-bottom: var(--spacing-sm);
+}
+
+.settings-field label {
+    display: block;
+    font-size: var(--font-xs);
+    color: var(--text-muted);
+    margin-bottom: 2px;
+}
+
+.settings-field input {
+    width: 100%;
+    padding: var(--spacing-sm) var(--spacing-md);
+    background-color: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    color: var(--text-primary);
+    font-size: var(--font-base);
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+.settings-field input:focus {
+    border-color: var(--accent);
+}
+
+.settings-field input::placeholder {
+    color: var(--text-muted);
+}
+
+.settings-hint {
+    display: block;
+    font-size: var(--font-xs);
+    color: var(--text-muted);
+    margin-top: 2px;
+}
+
+.settings-footer {
+    padding: var(--spacing-md) var(--spacing-lg);
+    border-top: 1px solid var(--border);
+    background-color: var(--bg-secondary);
+    border-radius: 0 0 var(--radius-xl) var(--radius-xl);
+}
+
+.settings-error {
+    color: var(--danger);
+    font-size: var(--font-sm);
+    margin-bottom: var(--spacing-sm);
+    min-height: 14px;
+    text-align: center;
+}
+
+.settings-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--spacing-sm);
 }

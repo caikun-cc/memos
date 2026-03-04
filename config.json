@@ -1,0 +1,5 @@
+{
+  "password": "admin123",
+  "jwtSecret": "your-super-secret-key-change-in-production",
+  "tokenExpiresIn": "7d"
+}
