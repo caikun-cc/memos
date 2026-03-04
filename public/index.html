@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>个人备忘录</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- 首页视图 -->
+    <main class="home-view" id="homeView">
+        <!-- 左侧信息面板 -->
+        <aside class="info-panel">
+            <header class="panel-header">
+                <h1>📝 备忘录</h1>
+                <button class="btn-new" id="btnNewMemo">+ 新建备忘录</button>
+            </header>
+            
+            <!-- 搜索框 -->
+            <div class="search-box">
+                <input type="text" id="searchInput" placeholder="搜索备忘录...">
+            </div>
+            
+            <!-- 日历 -->
+            <section class="calendar-section">
+                <h2 class="section-title">📅 日历</h2>
+                <div class="calendar" id="calendar">
+                    <header class="calendar-header">
+                        <button class="cal-nav" id="btnPrevMonth">‹</button>
+                        <span id="calendarTitle">2024年1月</span>
+                        <button class="cal-nav" id="btnNextMonth">›</button>
+                    </header>
+                    <div class="calendar-weekdays">
+                        <span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span>
+                    </div>
+                    <div class="calendar-days" id="calendarDays">
+                        <!-- 日历日期动态生成 -->
+                    </div>
+                </div>
+            </section>
+            
+            <!-- 标签筛选 -->
+            <section class="tags-section">
+                <header class="section-title">
+                    <span>🏷️ 标签</span>
+                    <button class="btn-clear" id="btnClearTag">清除</button>
+                </header>
+                <div class="tag-list" id="tagList">
+                    <!-- 标签列表动态加载 -->
+                </div>
+            </section>
+            
+            <!-- 统计信息 -->
+            <section class="stats-section">
+                <h2 class="section-title">📊 统计</h2>
+                <div class="stats-grid">
+                    <div class="stat-item">
+                        <span class="stat-value" id="totalMemos">0</span>
+                        <span class="stat-label">总备忘录</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-value" id="totalTags">0</span>
+                        <span class="stat-label">标签数</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-value" id="todayMemos">0</span>
+                        <span class="stat-label">今日新增</span>
+                    </div>
+                </div>
+            </section>
+        </aside>
+        
+        <!-- 右侧备忘录列表 -->
+        <section class="memo-panel">
+            <header class="memo-panel-header">
+                <h2 id="listTitle">全部备忘录</h2>
+                <span class="memo-count" id="memoCount">0 条</span>
+            </header>
+            <div class="memo-list-home" id="memoListHome">
+                <!-- 备忘录列表动态加载 -->
+            </div>
+        </section>
+    </main>
+
+    <!-- 编辑器视图 -->
+    <section class="editor-view" id="editorView" style="display: none;">
+        <div class="editor-container" id="editorContainer">
+            <!-- 顶部操作栏 -->
+            <header class="editor-toolbar">
+                <div class="toolbar-left">
+                    <button class="btn-back" id="btnBack">← 返回</button>
+                    <div class="toolbar-title" id="toolbarTitle">编辑备忘录</div>
+                </div>
+                <div class="toolbar-right">
+                    <button class="btn-tool" id="previewBtn" title="预览">
+                        <span class="btn-icon">👁️</span>
+                        <span class="btn-text">预览</span>
+                    </button>
+                    <button class="btn-tool btn-danger" id="deleteBtn" title="删除">
+                        <span class="btn-icon">🗑️</span>
+                        <span class="btn-text" id="deleteBtnText">删除</span>
+                    </button>
+                    <button class="btn-save" id="btnSave">保存</button>
+                </div>
+            </header>
+            
+            <!-- 标题输入 -->
+            <div class="editor-title-row">
+                <input type="text" class="title-input" id="titleInput" placeholder="输入标题...">
+            </div>
+            
+            <!-- 标签编辑 -->
+            <div class="tag-editor">
+                <div class="tags-container" id="tagsContainer">
+                    <!-- 标签显示 -->
+                </div>
+                <input type="text" class="tag-input" id="tagInput" placeholder="输入标签后按 Enter 添加...">
+            </div>
+            
+            <!-- 编辑/预览区域 -->
+            <div class="editor-body">
+                <div class="editor-pane" id="editorPane">
+                    <textarea class="content-editor" id="contentEditor" placeholder="在这里输入 Markdown 内容...
+
+支持的功能：
+- 标题：# ## ###
+- 列表：- * 1.
+- 代码块：```code```
+- 链接：[文字](url)
+- 图片：![alt](url)
+- 表格、引用等"></textarea>
+                </div>
+                <div class="preview-pane" id="previewPane" style="display: none;">
+                    <article class="preview-content" id="previewContent"></article>
+                </div>
+            </div>
+            
+            <!-- 底部状态栏 -->
+            <footer class="editor-footer">
+                <span id="lastSaved">最后保存：-</span>
+            </footer>
+        </div>
+    </section>
+
+    <!-- 确认对话框 -->
+    <div class="modal" id="confirmModal">
+        <div class="modal-content">
+            <p id="confirmMessage">确定要删除这个备忘录吗？</p>
+            <div class="modal-actions">
+                <button class="btn-cancel" id="btnCancelModal">取消</button>
+                <button class="btn-confirm" id="btnConfirmModal">确定</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

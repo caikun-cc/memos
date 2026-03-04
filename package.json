@@ -1,0 +1,23 @@
+{
+  "name": "memos",
+  "version": "1.0.0",
+  "description": "一个简洁的备忘录应用",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node index.js"
+  },
+  "keywords": [
+    "memo",
+    "notes",
+    "markdown",
+    "express"
+  ],
+  "dependencies": {
+    "express": "^5.2.1",
+    "marked": "^17.0.3",
+    "uuid": "^13.0.0"
+  },
+  "author": "",
+  "license": "MIT"
+}
