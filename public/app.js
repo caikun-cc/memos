@@ -42,6 +42,10 @@ const DOM = {
     memoCount: document.getElementById('memoCount'),
     toolbarTitle: document.getElementById('toolbarTitle'),
     deleteBtnText: document.getElementById('deleteBtnText'),
+    // 统计相关
+    totalMemos: document.getElementById('totalMemos'),
+    totalTags: document.getElementById('totalTags'),
+    todayMemos: document.getElementById('todayMemos'),
     // 设置相关
     settingsModal: document.getElementById('settingsModal'),
     oldPasswordInput: document.getElementById('oldPasswordInput'),
@@ -130,6 +134,13 @@ async function fetchAPI(url, options = {}) {
         if (response.status === 401) {
             handleAuthError(data);
             return { success: false, error: data.error, code: data.code };
+        }
+        
+        // 滑动刷新：检查是否有新token
+        const newToken = response.headers.get('X-New-Token');
+        if (newToken) {
+            state.token = newToken;
+            localStorage.setItem('token', newToken);
         }
         
         return data;
@@ -272,17 +283,20 @@ async function saveSettings() {
     });
     
     if (result.success) {
+        // 如果返回了新token，更新本地token
+        if (result.token) {
+            state.token = result.token;
+            localStorage.setItem('token', result.token);
+        }
+        
         showToast('设置已保存', 'success');
         closeSettings();
         
-        // 如果修改了JWT密钥，需要重新登录
-        if (jwtSecret) {
-            state.token = null;
-            state.isLoggedIn = false;
-            localStorage.removeItem('token');
-            showLogin();
-            showToast('JWT密钥已修改，请重新登录', 'info');
-        }
+        // 清空输入框
+        DOM.oldPasswordInput.value = '';
+        DOM.newPasswordInput.value = '';
+        DOM.jwtSecretInput.value = '';
+        DOM.settingsError.textContent = '';
     } else {
         DOM.settingsError.textContent = result.error || '保存失败';
     }
@@ -310,12 +324,12 @@ async function loadTags() {
 }
 
 function updateStats() {
-    document.getElementById('totalMemos').textContent = state.memoList.length;
-    document.getElementById('totalTags').textContent = state.allTags.length;
+    DOM.totalMemos.textContent = state.memoList.length;
+    DOM.totalTags.textContent = state.allTags.length;
 
     const today = new Date().toDateString();
     const todayCount = state.memoList.filter(m => new Date(m.createdAt).toDateString() === today).length;
-    document.getElementById('todayMemos').textContent = todayCount;
+    DOM.todayMemos.textContent = todayCount;
 }
 
 function renderTagList() {
@@ -336,26 +350,29 @@ function renderTagList() {
 
 function filterByTag(tag) {
     if (state.currentFilterTag === tag) {
-        state.currentFilterTag = null;
-        DOM.listTitle.textContent = '全部备忘录';
-    } else {
-        state.currentFilterTag = tag;
-        DOM.listTitle.textContent = `标签: ${tag}`;
+        tag = null; // 取消筛选
     }
+    state.currentFilterTag = tag;
+    DOM.listTitle.textContent = tag ? `标签: ${tag}` : '全部备忘录';
     loadMemoList();
     renderTagList();
 }
 
 function clearTagFilter() {
-    state.currentFilterTag = null;
-    DOM.listTitle.textContent = '全部备忘录';
-    loadMemoList();
-    renderTagList();
+    filterByTag(null);
 }
 
 function searchMemos() {
     state.searchKeyword = DOM.searchInput.value.toLowerCase().trim();
     renderMemoList();
+}
+
+// 排序函数：置顶优先，然后按更新时间
+function sortMemos(memos) {
+    return [...memos].sort((a, b) => {
+        if (a.pinned !== b.pinned) return b.pinned ? 1 : -1;
+        return new Date(b.updatedAt) - new Date(a.updatedAt);
+    });
 }
 
 // ========== 卡片渲染（提取公共逻辑） ==========
@@ -714,7 +731,7 @@ function renderCalendar() {
         let classes = 'cal-day';
         if (isToday) classes += ' today';
         if (hasMemo) classes += ' has-memo';
-        html += `<span class="${classes}" onclick="filterByDate(${year}, ${month}, ${i})">${i}</span>`;
+        html += `<span class="${classes}" data-year="${year}" data-month="${month}" data-day="${i}">${i}</span>`;
     }
 
     // 下月的日期
@@ -748,20 +765,12 @@ function filterByDate(year, month, day) {
     if (filtered.length === 1) {
         openMemo(filtered[0].id);
     } else if (filtered.length > 1) {
-        // 更新列表标题和显示
         const targetDate = new Date(year, month, day);
-        const dateStr = targetDate.toLocaleDateString('zh-CN');
-        DOM.listTitle.textContent = dateStr;
+        DOM.listTitle.textContent = targetDate.toLocaleDateString('zh-CN');
 
-        // 渲染筛选后的列表（使用统一的卡片渲染）
         DOM.memoCount.textContent = `${filtered.length} 条`;
         DOM.memoListHome.innerHTML = '';
-        // 按置顶和时间排序
-        const sorted = [...filtered].sort((a, b) => {
-            if (a.pinned !== b.pinned) return b.pinned ? 1 : -1;
-            return new Date(b.updatedAt) - new Date(a.updatedAt);
-        });
-        sorted.forEach(memo => {
+        sortMemos(filtered).forEach(memo => {
             DOM.memoListHome.appendChild(createMemoCard(memo));
         });
     }
@@ -843,6 +852,17 @@ function bindEvents() {
             e.preventDefault();
             addTag(DOM.tagInput.value.trim());
             DOM.tagInput.value = '';
+        }
+    });
+
+    // 日历点击事件委托
+    DOM.calendarDays.addEventListener('click', (e) => {
+        const dayEl = e.target.closest('.cal-day:not(.other-month)');
+        if (dayEl) {
+            const year = parseInt(dayEl.dataset.year);
+            const month = parseInt(dayEl.dataset.month);
+            const day = parseInt(dayEl.dataset.day);
+            filterByDate(year, month, day);
         }
     });
 }

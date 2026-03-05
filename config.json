@@ -1,5 +1,5 @@
 {
-  "password": "admin123",
-  "jwtSecret": "your-super-secret-key-change-in-production",
+  "password": "tskunc@123",
+  "jwtSecret": "1f4cbfd07f823a7edaa2c6b357a68ad2a020c7d3e114247c0e8a2efcecc8130d",
   "tokenExpiresIn": "7d"
 }

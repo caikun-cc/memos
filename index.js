@@ -1,7 +1,7 @@
 const express = require('express');
 const path = require('path');
 const fs = require('fs').promises;
-const fsSync = require('fs');
+const crypto = require('crypto');
 const { marked } = require('marked');
 const { v4: uuidv4 } = require('uuid');
 const jwt = require('jsonwebtoken');
@@ -11,7 +11,7 @@ const PORT = process.env.PORT || 8022;
 const MEMOS_DIR = path.join(__dirname, 'memos');
 const CONFIG_FILE = path.join(__dirname, 'config.json');
 
-// ========== 配置管理 ----------
+// ========== 配置管理 ==========
 let config = {
     password: 'admin123',
     jwtSecret: 'default-secret-key',
@@ -118,6 +118,18 @@ function authMiddleware(req, res, next) {
     try {
         const decoded = jwt.verify(token, config.jwtSecret);
         req.user = decoded;
+        
+        // 滑动刷新：检查token剩余有效期，如果小于1天则刷新
+        const tokenExp = decoded.exp * 1000; // 转换为毫秒
+        const now = Date.now();
+        const remainingTime = tokenExp - now;
+        const oneDay = 24 * 60 * 60 * 1000; // 1天的毫秒数
+        
+        if (remainingTime < oneDay && remainingTime > 0) {
+            const newToken = generateToken(decoded.loginTime);
+            res.setHeader('X-New-Token', newToken);
+        }
+        
         next();
     } catch (error) {
         return res.status(401).json({ success: false, error: '登录已过期，请重新登录', code: 'TOKEN_EXPIRED' });
@@ -205,6 +217,30 @@ async function readAllMemos() {
     return memos;
 }
 
+// 获取备忘录文件路径
+function getMemoPath(id) {
+    return path.join(MEMOS_DIR, `${id}.json`);
+}
+
+// 检查备忘录是否存在
+async function memoExists(id) {
+    try {
+        await fs.access(getMemoPath(id));
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+// 生成 JWT token
+function generateToken(loginTime) {
+    return jwt.sign(
+        { loginTime },
+        config.jwtSecret,
+        { expiresIn: config.tokenExpiresIn }
+    );
+}
+
 // ========== API 路由 ==========
 
 // ========== 认证 API ==========
@@ -221,11 +257,7 @@ app.post('/api/auth/login', async (req, res) => {
             return res.status(401).json({ success: false, error: '密码错误' });
         }
         
-        const token = jwt.sign(
-            { loginTime: new Date().toISOString() },
-            config.jwtSecret,
-            { expiresIn: config.tokenExpiresIn }
-        );
+        const token = generateToken(new Date().toISOString());
         
         res.json({ success: true, token });
     } catch (error) {
@@ -252,6 +284,7 @@ app.get('/api/auth/config', authMiddleware, (req, res) => {
 app.post('/api/auth/config', authMiddleware, async (req, res) => {
     try {
         const { oldPassword, newPassword, tokenExpiresIn, jwtSecret } = req.body;
+        let needNewToken = false;
         
         // 如果要修改密码，需要验证原密码
         if (newPassword) {
@@ -265,6 +298,9 @@ app.post('/api/auth/config', authMiddleware, async (req, res) => {
                 return res.status(400).json({ success: false, error: '新密码长度至少4位' });
             }
             config.password = newPassword;
+            // 修改密码时自动重新生成JWT密钥，使旧token失效
+            config.jwtSecret = crypto.randomBytes(32).toString('hex');
+            needNewToken = true;
         }
         
         // 修改过期时间
@@ -282,9 +318,15 @@ app.post('/api/auth/config', authMiddleware, async (req, res) => {
                 return res.status(400).json({ success: false, error: 'JWT密钥长度至少16位' });
             }
             config.jwtSecret = jwtSecret;
+            needNewToken = true;
         }
         
         await saveConfig();
+        
+        // 如果需要新token，生成并返回
+        if (needNewToken) {
+            return res.json({ success: true, message: '配置已保存', token: generateToken(new Date().toISOString()) });
+        }
         
         res.json({ success: true, message: '配置已保存' });
     } catch (error) {
@@ -354,16 +396,11 @@ app.get('/api/memos', authMiddleware, async (req, res) => {
 // 获取单个备忘录
 app.get('/api/memos/:id', authMiddleware, async (req, res) => {
     try {
-        const filePath = path.join(MEMOS_DIR, `${req.params.id}.json`);
-        
-        try {
-            await fs.access(filePath);
-        } catch {
+        if (!await memoExists(req.params.id)) {
             return res.status(404).json({ success: false, error: '备忘录不存在' });
         }
         
-        const content = await fs.readFile(filePath, 'utf-8');
-        const memo = JSON.parse(content);
+        const memo = JSON.parse(await fs.readFile(getMemoPath(req.params.id), 'utf-8'));
         res.json({ success: true, data: memo });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
@@ -386,7 +423,7 @@ app.post('/api/memos', authMiddleware, validateMemoInput, async (req, res) => {
             updatedAt: now
         };
         
-        await fs.writeFile(path.join(MEMOS_DIR, `${id}.json`), JSON.stringify(memo, null, 2));
+        await fs.writeFile(getMemoPath(id), JSON.stringify(memo, null, 2));
         invalidateCache();
         res.json({ success: true, data: memo });
     } catch (error) {
@@ -397,14 +434,11 @@ app.post('/api/memos', authMiddleware, validateMemoInput, async (req, res) => {
 // 更新备忘录
 app.put('/api/memos/:id', authMiddleware, validateMemoInput, async (req, res) => {
     try {
-        const filePath = path.join(MEMOS_DIR, `${req.params.id}.json`);
-        
-        try {
-            await fs.access(filePath);
-        } catch {
+        if (!await memoExists(req.params.id)) {
             return res.status(404).json({ success: false, error: '备忘录不存在' });
         }
         
+        const filePath = getMemoPath(req.params.id);
         const existing = JSON.parse(await fs.readFile(filePath, 'utf-8'));
         const updated = {
             ...existing,
@@ -425,14 +459,11 @@ app.put('/api/memos/:id', authMiddleware, validateMemoInput, async (req, res) =>
 // 切换置顶状态
 app.patch('/api/memos/:id/pinned', authMiddleware, async (req, res) => {
     try {
-        const filePath = path.join(MEMOS_DIR, `${req.params.id}.json`);
-        
-        try {
-            await fs.access(filePath);
-        } catch {
+        if (!await memoExists(req.params.id)) {
             return res.status(404).json({ success: false, error: '备忘录不存在' });
         }
         
+        const filePath = getMemoPath(req.params.id);
         const existing = JSON.parse(await fs.readFile(filePath, 'utf-8'));
         const updated = {
             ...existing,
@@ -451,15 +482,11 @@ app.patch('/api/memos/:id/pinned', authMiddleware, async (req, res) => {
 // 删除备忘录
 app.delete('/api/memos/:id', authMiddleware, async (req, res) => {
     try {
-        const filePath = path.join(MEMOS_DIR, `${req.params.id}.json`);
-        
-        try {
-            await fs.access(filePath);
-        } catch {
+        if (!await memoExists(req.params.id)) {
             return res.status(404).json({ success: false, error: '备忘录不存在' });
         }
         
-        await fs.unlink(filePath);
+        await fs.unlink(getMemoPath(req.params.id));
         invalidateCache();
         res.json({ success: true });
     } catch (error) {

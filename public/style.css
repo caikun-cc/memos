@@ -91,11 +91,6 @@ body {
     margin-bottom: var(--spacing-xs);
 }
 
-.login-header p {
-    color: var(--text-secondary);
-    font-size: var(--font-base);
-}
-
 .login-form {
     display: flex;
     flex-direction: column;
