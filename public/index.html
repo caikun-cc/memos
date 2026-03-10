@@ -32,7 +32,10 @@
             
             <!-- 搜索框 -->
             <div class="search-box">
-                <input type="text" id="searchInput" placeholder="搜索备忘录...">
+                <div class="search-input-wrapper">
+                    <input type="text" id="searchInput" placeholder="搜索备忘录...">
+                    <button class="search-clear hidden" id="btnSearchClear" title="清除搜索">×</button>
+                </div>
             </div>
             
             <!-- 日历 -->
@@ -44,6 +47,7 @@
                         <span id="calendarTitle">2024年1月</span>
                         <button class="cal-nav" id="btnNextMonth">›</button>
                     </header>
+                    <button class="btn-today" id="btnToday">今日</button>
                     <div class="calendar-weekdays">
                         <span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span>
                     </div>
@@ -57,7 +61,6 @@
             <section class="tags-section">
                 <header class="section-title">
                     <span>🏷️ 标签</span>
-                    <button class="btn-clear" id="btnClearTag">清除</button>
                 </header>
                 <div class="tag-list" id="tagList">
                     <!-- 标签列表动态加载 -->
@@ -91,7 +94,10 @@
         <section class="memo-panel">
             <header class="memo-panel-header">
                 <h2 id="listTitle">全部备忘录</h2>
-                <span class="memo-count" id="memoCount">0 条</span>
+                <div class="memo-panel-actions">
+                    <button class="btn-clear-filter hidden" id="btnClearFilter">清除筛选</button>
+                    <span class="memo-count" id="memoCount">0 条</span>
+                </div>
             </header>
             <div class="memo-list-home" id="memoListHome">
                 <!-- 备忘录列表动态加载 -->
@@ -131,7 +137,12 @@
                 <div class="tags-container" id="tagsContainer">
                     <!-- 标签显示 -->
                 </div>
-                <input type="text" class="tag-input" id="tagInput" placeholder="输入标签后按 Enter 添加...">
+                <div class="tag-input-wrapper">
+                    <input type="text" class="tag-input" id="tagInput" placeholder="输入标签后按 Enter 添加..." autocomplete="off">
+                    <div class="tag-suggestions" id="tagSuggestions">
+                        <!-- 标签建议列表 -->
+                    </div>
+                </div>
             </div>
             
             <!-- 编辑/预览区域 -->

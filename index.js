@@ -355,7 +355,7 @@ app.get('/api/tags', authMiddleware, async (req, res) => {
 // 获取所有备忘录列表
 app.get('/api/memos', authMiddleware, async (req, res) => {
     try {
-        const { tag } = req.query;
+        const { tag, search } = req.query;
         const memos = await readAllMemos();
         
         let result = memos.map(memo => {
@@ -371,6 +371,7 @@ app.get('/api/memos', authMiddleware, async (req, res) => {
                 pinned: memo.pinned || false,
                 preview: memo.content.substring(0, 100),
                 previewHtml,
+                content: memo.content,
                 hasMore: memo.content.length > 300
             };
         }).sort((a, b) => {
@@ -385,6 +386,15 @@ app.get('/api/memos', authMiddleware, async (req, res) => {
         // 按标签筛选
         if (tag) {
             result = result.filter(m => m.tags.includes(tag));
+        }
+        
+        // 按关键词搜索
+        if (search) {
+            const keyword = search.toLowerCase();
+            result = result.filter(m => 
+                m.title.toLowerCase().includes(keyword) ||
+                m.content.toLowerCase().includes(keyword)
+            );
         }
         
         res.json({ success: true, data: result });

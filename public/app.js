@@ -5,6 +5,7 @@ const state = {
     memoList: [],
     allTags: [],
     currentFilterTag: null,
+    currentFilterDate: null,
     currentTags: [],
     isPreviewMode: false,
     pendingAction: null,
@@ -265,6 +266,21 @@ async function saveSettings() {
         return;
     }
     
+    // 验证 token 过期时间格式
+    if (tokenExpiresIn) {
+        const validFormat = /^\d+[hdmy]$/;
+        if (!validFormat.test(tokenExpiresIn)) {
+            DOM.settingsError.textContent = 'Token过期时间格式错误，例如：7d、24h、1m、1y';
+            return;
+        }
+    }
+    
+    // 验证 JWT 密钥长度
+    if (jwtSecret && jwtSecret.length < 16) {
+        DOM.settingsError.textContent = 'JWT密钥长度至少16位';
+        return;
+    }
+    
     const body = {};
     if (newPassword) {
         body.oldPassword = oldPassword;
@@ -353,18 +369,70 @@ function filterByTag(tag) {
         tag = null; // 取消筛选
     }
     state.currentFilterTag = tag;
+    // 清除日期筛选状态
+    state.currentFilterDate = null;
     DOM.listTitle.textContent = tag ? `标签: ${tag}` : '全部备忘录';
     loadMemoList();
     renderTagList();
+    updateClearFilterButton();
 }
 
-function clearTagFilter() {
-    filterByTag(null);
+function updateClearFilterButton() {
+    const btn = document.getElementById('btnClearFilter');
+    const hasFilter = state.currentFilterTag !== null || state.currentFilterDate !== null;
+    if (hasFilter) {
+        btn.classList.remove('hidden');
+    } else {
+        btn.classList.add('hidden');
+    }
+}
+
+function clearAllFilters() {
+    // 清除标签筛选
+    state.currentFilterTag = null;
+    renderTagList();
+    // 清除日期筛选
+    state.currentFilterDate = null;
+    DOM.listTitle.textContent = '全部备忘录';
+    // 隐藏清除按钮
+    document.getElementById('btnClearFilter').classList.add('hidden');
+    // 重新加载全部备忘录
+    loadMemoList();
 }
 
 function searchMemos() {
     state.searchKeyword = DOM.searchInput.value.toLowerCase().trim();
     renderMemoList();
+    updateSearchClearButton();
+}
+
+// 更新搜索清除按钮状态
+function updateSearchClearButton() {
+    const btn = document.getElementById('btnSearchClear');
+    if (DOM.searchInput.value) {
+        btn.classList.remove('hidden');
+    } else {
+        btn.classList.add('hidden');
+    }
+}
+
+// 清除搜索
+function clearSearch() {
+    DOM.searchInput.value = '';
+    state.searchKeyword = '';
+    renderMemoList();
+    document.getElementById('btnSearchClear').classList.add('hidden');
+}
+
+// 搜索防抖
+const debouncedSearch = debounce(searchMemos, 300);
+
+// 高亮关键词
+function highlightKeyword(text, keyword) {
+    if (!keyword) return escapeHtml(text);
+    const escaped = escapeHtml(text);
+    const regex = new RegExp(`(${keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+    return escaped.replace(regex, '<mark>$1</mark>');
 }
 
 // 排序函数：置顶优先，然后按更新时间
@@ -376,7 +444,7 @@ function sortMemos(memos) {
 }
 
 // ========== 卡片渲染（提取公共逻辑） ==========
-function createMemoCard(memo) {
+function createMemoCard(memo, keyword = '') {
     const card = document.createElement('div');
     card.className = `memo-card ${memo.pinned ? 'pinned' : ''}`;
 
@@ -386,7 +454,7 @@ function createMemoCard(memo) {
     let tagsHtml = '';
     if (memo.tags && memo.tags.length > 0) {
         tagsHtml = `<div class="memo-card-tags">
-            ${memo.tags.slice(0, 3).map(t => `<span class="memo-card-tag">${escapeHtml(t)}</span>`).join('')}
+            ${memo.tags.slice(0, 3).map(t => `<span class="memo-card-tag">${highlightKeyword(t, keyword)}</span>`).join('')}
             ${memo.tags.length > 3 ? `<span class="memo-card-tag">+${memo.tags.length - 3}</span>` : ''}
         </div>`;
     }
@@ -395,7 +463,7 @@ function createMemoCard(memo) {
         <div class="memo-card-header">
             <div class="memo-card-title">
                 ${memo.pinned ? '<span class="pin-icon">📌</span>' : ''}
-                ${escapeHtml(memo.title)}
+                ${highlightKeyword(memo.title, keyword)}
             </div>
             <div class="memo-card-actions">
                 <button class="pin-btn ${memo.pinned ? 'pinned' : ''}" onclick="event.stopPropagation(); togglePin('${memo.id}')" title="${memo.pinned ? '取消置顶' : '置顶'}">
@@ -404,7 +472,7 @@ function createMemoCard(memo) {
                 <span class="memo-card-date">${dateStr}</span>
             </div>
         </div>
-        <div class="memo-card-preview markdown-preview collapsed">${memo.previewHtml || escapeHtml(memo.preview)}</div>
+        <div class="memo-card-preview markdown-preview collapsed">${keyword ? highlightKeyword(memo.preview, keyword) : (memo.previewHtml || escapeHtml(memo.preview))}</div>
         ${memo.hasMore ? '<button class="expand-btn" onclick="event.stopPropagation(); toggleExpand(this)">展开</button>' : ''}
         ${tagsHtml}
     `;
@@ -421,11 +489,12 @@ function createMemoCard(memo) {
 function renderMemoList(filteredList = null) {
     let list = filteredList || state.memoList;
 
-    // 搜索过滤
+    // 搜索过滤（搜索标题和内容）
     if (!filteredList && state.searchKeyword) {
         list = state.memoList.filter(m =>
             m.title.toLowerCase().includes(state.searchKeyword) ||
-            m.preview.toLowerCase().includes(state.searchKeyword)
+            m.preview.toLowerCase().includes(state.searchKeyword) ||
+            (m.content && m.content.toLowerCase().includes(state.searchKeyword))
         );
     }
 
@@ -435,12 +504,15 @@ function renderMemoList(filteredList = null) {
     DOM.memoListHome.innerHTML = '';
 
     if (list.length === 0) {
-        DOM.memoListHome.innerHTML = '<div class="empty-state" style="padding: 60px 20px; text-align: center; color: var(--text-muted);"><div style="font-size: 48px; margin-bottom: 16px;">📭</div><p>暂无备忘录</p></div>';
+        const emptyMsg = state.searchKeyword 
+            ? `<div style="font-size: 48px; margin-bottom: 16px;">🔍</div><p>未找到包含 "${escapeHtml(state.searchKeyword)}" 的备忘录</p>`
+            : '<div style="font-size: 48px; margin-bottom: 16px;">📭</div><p>暂无备忘录</p>';
+        DOM.memoListHome.innerHTML = `<div class="empty-state" style="padding: 60px 20px; text-align: center; color: var(--text-muted);">${emptyMsg}</div>`;
         return;
     }
 
     list.forEach(memo => {
-        DOM.memoListHome.appendChild(createMemoCard(memo));
+        DOM.memoListHome.appendChild(createMemoCard(memo, state.searchKeyword));
     });
 }
 
@@ -691,6 +763,41 @@ function removeTag(tag) {
     }
 }
 
+// ========== 标签自动补全 ==========
+function showTagSuggestions(keyword) {
+    const suggestionsEl = document.getElementById('tagSuggestions');
+    if (!keyword) {
+        suggestionsEl.classList.remove('show');
+        return;
+    }
+    
+    const keywordLower = keyword.toLowerCase();
+    const suggestions = state.allTags.filter(tag => 
+        tag.toLowerCase().includes(keywordLower) && 
+        !state.currentTags.includes(tag)
+    ).slice(0, 5);
+    
+    if (suggestions.length === 0) {
+        suggestionsEl.classList.remove('show');
+        return;
+    }
+    
+    suggestionsEl.innerHTML = suggestions.map(tag => 
+        `<div class="tag-suggestion-item" onclick="selectTagSuggestion('${escapeHtml(tag)}')">${escapeHtml(tag)}</div>`
+    ).join('');
+    suggestionsEl.classList.add('show');
+}
+
+function selectTagSuggestion(tag) {
+    addTag(tag);
+    DOM.tagInput.value = '';
+    document.getElementById('tagSuggestions').classList.remove('show');
+}
+
+function hideTagSuggestions() {
+    document.getElementById('tagSuggestions').classList.remove('show');
+}
+
 // ========== 日历功能 ==========
 function renderCalendar() {
     const year = state.currentMonth.getFullYear();
@@ -753,7 +860,20 @@ function nextMonth() {
     renderCalendar();
 }
 
+function goToToday() {
+    state.currentMonth = new Date();
+    renderCalendar();
+    clearAllFilters();
+}
+
 function filterByDate(year, month, day) {
+    // 清除标签筛选
+    state.currentFilterTag = null;
+    renderTagList();
+
+    // 设置日期筛选状态
+    state.currentFilterDate = new Date(year, month, day);
+
     // 筛选该日期创建的备忘录
     const filtered = state.memoList.filter(m => {
         const memoDate = new Date(m.createdAt);
@@ -762,9 +882,7 @@ function filterByDate(year, month, day) {
             memoDate.getDate() === day;
     });
 
-    if (filtered.length === 1) {
-        openMemo(filtered[0].id);
-    } else if (filtered.length > 1) {
+    if (filtered.length >= 1) {
         const targetDate = new Date(year, month, day);
         DOM.listTitle.textContent = targetDate.toLocaleDateString('zh-CN');
 
@@ -773,6 +891,9 @@ function filterByDate(year, month, day) {
         sortMemos(filtered).forEach(memo => {
             DOM.memoListHome.appendChild(createMemoCard(memo));
         });
+
+        // 显示清除筛选按钮
+        document.getElementById('btnClearFilter').classList.remove('hidden');
     }
 }
 
@@ -817,14 +938,16 @@ function bindEvents() {
     document.getElementById('btnNewMemo').addEventListener('click', createNewMemo);
     
     // 搜索
-    DOM.searchInput.addEventListener('input', searchMemos);
+    DOM.searchInput.addEventListener('input', debouncedSearch);
+    document.getElementById('btnSearchClear').addEventListener('click', clearSearch);
     
     // 日历导航
     document.getElementById('btnPrevMonth').addEventListener('click', prevMonth);
     document.getElementById('btnNextMonth').addEventListener('click', nextMonth);
-    
-    // 清除标签筛选
-    document.getElementById('btnClearTag').addEventListener('click', clearTagFilter);
+    document.getElementById('btnToday').addEventListener('click', goToToday);
+
+    // 清除筛选（标签/日期）
+    document.getElementById('btnClearFilter').addEventListener('click', clearAllFilters);
     
     // 编辑器操作
     document.getElementById('btnBack').addEventListener('click', goHome);
@@ -852,6 +975,21 @@ function bindEvents() {
             e.preventDefault();
             addTag(DOM.tagInput.value.trim());
             DOM.tagInput.value = '';
+            hideTagSuggestions();
+        } else if (e.key === 'Escape') {
+            hideTagSuggestions();
+        }
+    });
+
+    // 标签输入自动补全
+    DOM.tagInput.addEventListener('input', (e) => {
+        showTagSuggestions(e.target.value.trim());
+    });
+
+    // 点击其他地方隐藏建议
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('.tag-input-wrapper')) {
+            hideTagSuggestions();
         }
     });
 
