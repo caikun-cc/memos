@@ -18,7 +18,7 @@ npm install
 npm start
 ```
 
-访问 http://localhost:8022，首次使用需在 `config.json` 设置密码。
+访问 [http://localhost:8022](http://localhost:8022)，首次使用需在 `config.json` 设置密码。
 
 ## 配置说明
 
